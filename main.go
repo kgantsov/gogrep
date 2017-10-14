@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 )
@@ -69,6 +72,53 @@ func printFile(include, pattern string, excludeDir []string) filepath.WalkFunc {
 	}
 }
 
+func addToQueue(jobs chan string, path string) {
+	jobs <- path
+}
+
+func worker(id int, pattern string, jobs chan string, wg *sync.WaitGroup) {
+	for {
+		select {
+		case j := <-jobs:
+			files, err := ioutil.ReadDir(j)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			for _, f := range files {
+				if f.IsDir() {
+					go addToQueue(jobs, fmt.Sprintf("%s/%s", j, f.Name()))
+					wg.Add(1)
+				} else {
+					findWordInFile(pattern, fmt.Sprintf("%s/%s", j, f.Name()))
+				}
+			}
+			wg.Done()
+		default:
+		}
+	}
+}
+
+func walkParrallel(dir, pattern string) {
+	var wg sync.WaitGroup
+
+	numWorkers := 4
+	if n := runtime.NumCPU(); n > numWorkers {
+		numWorkers = n
+	}
+
+	jobs := make(chan string, numWorkers)
+
+	for w := 1; w <= numWorkers; w++ {
+		go worker(w, pattern, jobs, &wg)
+	}
+
+	go addToQueue(jobs, dir)
+	wg.Add(1)
+
+	wg.Wait()
+}
+
 func main() {
 	info, _ := os.Stdin.Stat()
 
@@ -76,16 +126,25 @@ func main() {
 		excludeDir := flag.String(
 			"exclude-dir",
 			".bzr,CVS,.git,.hg,.svn",
-			"List of coma separated dirs (Default is: .bzr,CVS,.git,.hg,.svn)",
+			"List of coma separated dirs",
 		)
-		include := flag.String("include", "*", "Include pattern (Default is: *)")
-		parrallel := flag.Bool("p", false, "Run walk in parallel")
+		include := flag.String("include", "*", "Include pattern")
+		parrallel := flag.Bool("p", false, "Run gogrep in parallel")
+
+		flag.Usage = func() {
+			fmt.Fprintf(
+				os.Stderr,
+				"Usage: %s [flags] [pattern] [file]\n\nFlags:\n",
+				os.Args[0],
+			)
+			flag.PrintDefaults()
+		}
 
 		flag.Parse()
 
 		args := flag.Args()
 		if len(args) != 2 {
-			log.Print("Not enough arguments")
+			flag.Usage()
 			return
 		}
 
@@ -93,7 +152,7 @@ func main() {
 		dir := flag.Args()[1]
 
 		if *parrallel {
-			fmt.Println("Not implemented yet")
+			walkParrallel(dir, pattern)
 		} else {
 			err := filepath.Walk(dir, printFile(*include, pattern, strings.Split(*excludeDir, ",")))
 			if err != nil {
