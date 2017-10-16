@@ -35,8 +35,13 @@ func findWordInBuffer(pattern, path string, scanner *bufio.Scanner) {
 }
 
 func findWordInFile(pattern, path string) {
-	inFile, _ := os.Open(path)
+	inFile, err := os.Open(path)
 	defer inFile.Close()
+
+	if err != nil {
+		log.Print("Error opening file: ", err)
+		return
+	}
 
 	scanner := bufio.NewScanner(inFile)
 
@@ -46,7 +51,7 @@ func findWordInFile(pattern, path string) {
 func printFile(include, pattern string, excludeDir []string) filepath.WalkFunc {
 	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Print(err)
+			log.Print("Walking error: ", err)
 			return nil
 		}
 
@@ -61,7 +66,7 @@ func printFile(include, pattern string, excludeDir []string) filepath.WalkFunc {
 		if !info.IsDir() {
 			matched, err := filepath.Match(include, info.Name())
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println("File path matching error: ", err)
 				return err
 			}
 			if matched {
@@ -72,25 +77,25 @@ func printFile(include, pattern string, excludeDir []string) filepath.WalkFunc {
 	}
 }
 
-func addToQueue(jobs chan string, path string) {
-	jobs <- path
+func addToQueue(dirsChan chan string, path string) {
+	dirsChan <- path
 }
 
-func worker(id int, pattern string, jobs chan string, wg *sync.WaitGroup) {
+func worker(id int, pattern string, dirsChan chan string, wg *sync.WaitGroup) {
 	for {
 		select {
-		case j := <-jobs:
-			files, err := ioutil.ReadDir(j)
+		case dir := <-dirsChan:
+			files, err := ioutil.ReadDir(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("Reading directory error: ", err)
 			}
 
-			for _, f := range files {
-				if f.IsDir() {
-					go addToQueue(jobs, fmt.Sprintf("%s/%s", j, f.Name()))
+			for _, file := range files {
+				if file.IsDir() {
+					go addToQueue(dirsChan, fmt.Sprintf("%s/%s", dir, file.Name()))
 					wg.Add(1)
 				} else {
-					findWordInFile(pattern, fmt.Sprintf("%s/%s", j, f.Name()))
+					findWordInFile(pattern, fmt.Sprintf("%s/%s", dir, file.Name()))
 				}
 			}
 			wg.Done()
@@ -107,13 +112,13 @@ func walkParrallel(dir, pattern string) {
 		numWorkers = n
 	}
 
-	jobs := make(chan string, numWorkers)
+	dirsChan := make(chan string, numWorkers)
 
 	for w := 1; w <= numWorkers; w++ {
-		go worker(w, pattern, jobs, &wg)
+		go worker(w, pattern, dirsChan, &wg)
 	}
 
-	go addToQueue(jobs, dir)
+	go addToQueue(dirsChan, dir)
 	wg.Add(1)
 
 	wg.Wait()
@@ -156,7 +161,7 @@ func main() {
 		} else {
 			err := filepath.Walk(dir, printFile(*include, pattern, strings.Split(*excludeDir, ",")))
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("Walking error: ", err)
 			}
 		}
 	} else if info.Size() > 0 {
