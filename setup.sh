@@ -5,13 +5,6 @@ set -u
 
 GOGREP_URL="https://github.com/kgantsov/gogrep/releases/download/v0.1/gogrep"
 
-usage() {
-    cat 1>&2 <<EOF
-gogrep 0.1
-The installer for gogrep
-EOF
-}
-
 main() {
     need_cmd uname
     need_cmd curl
@@ -51,7 +44,6 @@ main() {
     return "$_retval"
 }
 
-
 get_bitness() {
     need_cmd head
     # Architecture detection without dependencies beyond coreutils.
@@ -69,7 +61,6 @@ get_bitness() {
         err "unknown platform bitness"
     fi
 }
-
 
 get_architecture() {
     local _ostype="$(uname -s)"
@@ -131,8 +122,6 @@ get_architecture() {
 
     RETVAL="$_arch"
 }
-
-
 
 say() {
     echo "gogrep: $1"
