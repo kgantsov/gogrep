@@ -30,6 +30,12 @@ Running GNU grep:
 
 # Installation
 
+## Install binary (MacOS and Linux):
+
+    curl -s -L https://github.com/kgantsov/gogrep/releases/download/v0.1/setup.sh | sh
+
+## Install from the source:
+
 First of all `github.com/fatih/color` library needs to be installed.
 
     go get github.com/fatih/color
