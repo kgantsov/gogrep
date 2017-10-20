@@ -27,25 +27,27 @@ func findWordInBuffer(pattern, path string, scanner *bufio.Scanner) {
 
 			if len(path) == 0 {
 				fmt.Println(fmt.Sprintf("%s", line))
-			} else {
-				fmt.Println(fmt.Sprintf("%s: %s", cyan(path), line))
+				continue
 			}
+
+			fmt.Println(fmt.Sprintf("%s: %s", cyan(path), line))
 		}
 	}
 }
 
-func findWordInFile(pattern, path string) {
+func findWordInFile(pattern, path string) error {
 	inFile, err := os.Open(path)
-	defer inFile.Close()
 
 	if err != nil {
-		log.Print("Error opening file: ", err)
-		return
+		return err
 	}
+	defer inFile.Close()
 
 	scanner := bufio.NewScanner(inFile)
 
 	findWordInBuffer(pattern, path, scanner)
+
+	return nil
 }
 
 func printFile(include, pattern string, excludeDir []string) filepath.WalkFunc {
@@ -70,15 +72,14 @@ func printFile(include, pattern string, excludeDir []string) filepath.WalkFunc {
 				return err
 			}
 			if matched {
-				findWordInFile(pattern, path)
+				err = findWordInFile(pattern, path)
+				if err != nil {
+					log.Print("Error finding word in file: ", err)
+				}
 			}
 		}
 		return nil
 	}
-}
-
-func addToQueue(dirsChan chan string, path string) {
-	dirsChan <- path
 }
 
 func worker(id int, pattern string, dirsChan chan string, wg *sync.WaitGroup) {
@@ -92,7 +93,9 @@ func worker(id int, pattern string, dirsChan chan string, wg *sync.WaitGroup) {
 
 			for _, file := range files {
 				if file.IsDir() {
-					go addToQueue(dirsChan, fmt.Sprintf("%s/%s", dir, file.Name()))
+					go func(dirsC chan string, path string) {
+						dirsC <- path
+					}(dirsChan, fmt.Sprintf("%s/%s", dir, file.Name()))
 					wg.Add(1)
 				} else {
 					findWordInFile(pattern, fmt.Sprintf("%s/%s", dir, file.Name()))
@@ -118,7 +121,9 @@ func walkParrallel(dir, pattern string) {
 		go worker(w, pattern, dirsChan, &wg)
 	}
 
-	go addToQueue(dirsChan, dir)
+	go func(dirsC chan string, path string) {
+		dirsC <- path
+	}(dirsChan, dir)
 	wg.Add(1)
 
 	wg.Wait()
